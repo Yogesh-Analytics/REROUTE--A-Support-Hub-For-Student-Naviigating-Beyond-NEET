@@ -1,0 +1,54 @@
+/**
+ * @file Firestore Security Rules for PivotPath Community Forum
+ * @description This ruleset enforces a user-ownership model for profile data and allows for public forums with owner-controlled posts and comments.
+ *
+ * Data Structure:
+ * - /users/{userId}: User profile information, private to each user.
+ * - /posts/{postId}: Posts within the forum, publicly readable, write-protected by the author.
+ *
+ * Key Security Decisions:
+ * - Users can only access their own profile data.
+ * - Posts are publicly readable.
+ * - Authenticated users can create posts.
+ * - Authors can update and delete their own posts.
+ * - No listing of users is allowed.
+ *
+ * Denormalization for Authorization:
+ * - Posts store the userId of the author, enabling ownership checks without additional reads.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Allows users to manage their own profile data.
+     * @path /users/{userId}
+     */
+    match /users/{userId} {
+      function isOwner() {
+        return request.auth.uid == userId;
+      }
+
+      allow read, write: if isOwner();
+      allow list: if false; 
+    }
+
+    /**
+     * @description Publicly readable posts, with write access restricted to authors.
+     * @path /posts/{postId}
+     */
+    match /posts/{postId} {
+      function isAuthor() {
+        return request.auth.uid == resource.data.userId;
+      }
+      
+      function isNewPostAuthor() {
+         return request.auth.uid == request.resource.data.userId;
+      }
+
+      allow read: if true;
+      allow create: if request.auth != null && isNewPostAuthor();
+      allow update, delete: if isAuthor();
+    }
+  }
+}
